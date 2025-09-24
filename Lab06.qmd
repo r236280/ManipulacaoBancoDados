@@ -1,0 +1,222 @@
+---
+title: "Laboratorio 6"
+author: "Rafael"
+format: html
+editor: visual
+---
+
+## Laboratório 6
+
+```{r}
+library(dplyr)
+library(RSQLite)
+library(knitr)
+library(kableExtra)
+```
+
+1\.
+
+```{r}
+path <- file.path("../ME315/disco.db")
+#setwd("\\\\smb/ra236280/Documentos")
+```
+
+2\.
+
+```{r}
+conn <- dbConnect(SQLite(), path)
+```
+
+3\.
+
+```{r}
+dbListTables(conn)
+```
+
+4\.
+
+```{r}
+dbListFields(conn, "customers")
+```
+
+5\.
+
+```{r}
+dbGetQuery(conn,
+           "
+            SELECT
+            COUNT(DISTINCT CustomerId) as QTD_CLI
+            FROM customers
+           "
+           )
+```
+
+6\.
+
+```{r}
+dbGetQuery(conn,
+           "
+            SELECT
+            COUNT(DISTINCT Country)
+            FROM customers
+           "
+           )
+```
+
+7\.
+
+```{r}
+dbGetQuery(conn,
+           "
+           SELECT
+           Country,
+           COUNT(DISTINCT CustomerId) as Total
+           FROM customers
+           GROUP BY Country
+           ORDER BY Total DESC
+           ")
+```
+
+8\.
+
+```{r}
+dbGetQuery(conn,
+           "
+           SELECT
+           Country,
+           COUNT(DISTINCT CustomerId) as Total
+           FROM customers
+           GROUP BY Country
+           ORDER BY Total DESC
+           LIMIT 5
+           ")
+```
+
+9\.
+
+```{r}
+dbGetQuery(
+  conn,
+  "
+  SELECT
+  Country
+  FROM customers
+  WHERE LENGTH(Country) = 6
+  GROUP BY Country
+  "
+)
+```
+
+10\.
+
+```{r}
+musicas_df <- dbGetQuery(
+  conn,
+  "
+  SELECT 
+    TR.Name AS TrackName,
+    AL.Title AS Album,
+    SUM(IT.Quantity) AS NumCompras
+    FROM invoice_items AS IT
+    LEFT JOIN invoices AS IV
+      ON IT.InvoiceId = IV.InvoiceId
+    LEFT JOIN tracks AS TR
+      ON IT.TrackId = TR.TrackId
+    LEFT JOIN customers AS CS
+      ON IV.CustomerId = CS.CustomerId
+    LEFT JOIN albums AS AL
+      ON AL.AlbumId = TR.AlbumID
+    WHERE CS.Country = 'Brazil'
+    GROUP BY TR.Name
+    ORDER BY NumCompras DESC
+"
+)
+
+kable(musicas_df, caption = "Número de compras por música - Clientes Brasileiros") %>%
+  kable_styling(full_width = FALSE) %>%
+  scroll_box(height = "400px")
+```
+
+Album mais tocado por país.
+
+```{r}
+albuns_df <- dbGetQuery(
+  conn,
+  "
+  WITH Vendas AS(
+    SELECT
+      CS.Country,
+      AL.Title AS Album,
+      SUM(IT.Quantity) AS NumCompras,
+      RANK() OVER (PARTITION BY CS.Country ORDER BY SUM(IT.Quantity) DESC) AS rnk
+      FROM invoice_items AS IT
+      LEFT JOIN invoices AS IV
+        ON IT.InvoiceId = IV.InvoiceId
+      LEFT JOIN tracks AS TR
+        ON IT.TrackId = TR.TrackId
+      LEFT JOIN customers AS CS
+        ON IV.CustomerId = CS.CustomerId
+      LEFT JOIN albums AS AL
+        ON AL.AlbumID = TR.AlbumID
+      GROUP BY CS.Country, AL.Title
+  )
+  SELECT
+    Country,
+    Album,
+    NumCompras
+    FROM Vendas
+    WHERE rnk = 1
+    ORDER BY Country
+"
+)
+
+kable(albuns_df, caption = "Álbum mais comprado de cada país") %>%
+  kable_styling(full_width = FALSE) %>%
+  scroll_box(height = "400px")
+```
+
+Artista mais tocado por país.
+
+```{r}
+artista_df <- dbGetQuery(
+  conn,
+  "
+  WITH Vendas AS(
+    SELECT
+      CS.Country,
+      AR.Name AS Artista,
+      SUM(IT.Quantity) AS NumCompras,
+      RANK() OVER (PARTITION BY CS.Country ORDER BY SUM(IT.Quantity) DESC) AS rnk
+      FROM invoice_items AS IT
+      LEFT JOIN invoices AS IV
+        ON IT.InvoiceId = IV.InvoiceId
+      LEFT JOIN tracks AS TR
+        ON IT.TrackId = TR.TrackId
+      LEFT JOIN customers AS CS
+        ON IV.CustomerId = CS.CustomerId
+      LEFT JOIN albums AS AL
+        ON AL.AlbumID = TR.AlbumID
+      LEFT JOIN artists AS AR
+        ON AR.ArtistId = AL.ArtistId
+      GROUP BY CS.Country, AR.Name
+  )
+  SELECT
+    Country,
+    Artista,
+    NumCompras
+    FROM Vendas
+    WHERE rnk = 1
+    ORDER BY Country
+"
+)
+
+kable(artista_df, caption = "Artista mais comprado de cada país") %>%
+  kable_styling(full_width = FALSE) %>%
+  scroll_box(height = "400px")
+```
+
+11\.
+
+```{r}
+dbDisconnect(conn)
+```
