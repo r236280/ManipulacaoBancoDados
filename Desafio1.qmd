@@ -1,0 +1,43 @@
+---
+title: "Desafio 01 (+0.25 na P1)"
+author: "ME315"
+format: html
+editor: visual
+---
+
+```{r}
+library(reticulate)
+
+# cria o ambiente virtual "env_me315"
+virtualenv_create("env_me315")
+
+# ativa o ambiente
+use_virtualenv("env_me315", required = TRUE)
+
+# instala o pacote pandas dentro desse ambiente
+py_install("pandas", envname = "env_me315")
+```
+
+```{r}
+ini <- Sys.time()
+dados <- read.csv(unz('../ME315/dados/flights.csv.zip', "flights.csv"))
+fim <- Sys.time()
+fim - ini
+```
+
+```{r}
+library(readr)
+ini <- Sys.time()
+dados <- read_csv('../ME315/dados/flights.csv.zip')
+fim <- Sys.time()
+fim - ini
+```
+
+```{python}
+import time
+import pandas as pd
+ini = time.time()
+dados = pd.read_csv("../ME315/dados/flights.csv.zip", compression="zip", header=0, sep=",", low_memory=False)
+fim = time.time()
+fim - ini
+```
