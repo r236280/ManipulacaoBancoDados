@@ -1,0 +1,158 @@
+---
+title: "Lab02"
+format: html
+editor: visual
+---
+
+## Laboratório 2
+
+```{python}
+#importação dos pacotes
+import calendar
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+
+#caminho do arquivo zip
+caminho_zip = "//smb/ra236280/Documentos/ME315/dados/flights.csv.zip"
+
+#Definimos uma função que recebe um data frame como entrada e produz um novo data frame como saída
+def getStats(input_df: pd.DataFrame) -> pd.DataFrame:
+  #definimos um novo data frame usando data frame de entrada porém apenas com as linhas em que temos AA, DL, UA ou US na coluna AIRLINE e a coluna ARRIVAL_DELAY não tem entrada nula
+  filtered = input_df[ 
+    (input_df["AIRLINE"].isin(["AA", "DL", "UA", "US"])) &
+    (input_df["ARRIVAL_DELAY"].notna())
+  ]
+
+  stats = (
+    filtered
+    # agrupa o data frame filtered com base nas colunas DAY, MONTH e AIRLINE. Assim as operações serão aplicadas
+    # para cada combinaçõa única das colunas.
+    .groupby(["DAY", "MONTH", "AIRLINE"])
+    # aplica funções a cada uma dessas combinações únicas
+    .agg(
+      #conta o "size", numero de linhas da colunas ARRIVAL_DELAY, dentro de cada combinação única feita pelo groupby
+      n=("ARRIVAL_DELAY", "size"),
+      #a função lamba verifica, dentro de cada agrupamento, quais valores da coluna ARRIVAL_DELAY tem valores maiores 
+      # do que 10 e retorna True ou False de acordo com cada valor, somando a quantidade de valores TRUE ao final,
+      # já que em python True é tratado como 1 e False como 0.
+      atrasos=("ARRIVAL_DELAY", lambda x: (x>10).sum())
+    )
+    #gera uma nova coluna indice para o agora agrupado data frame
+    .reset_index()
+  )
+  return stats
+
+#definimos o tamanho das chunks
+chunksize = 100_000
+#definimos as colunas que queremos
+usecols = ["AIRLINE", "DAY", "MONTH", "ARRIVAL_DELAY"]
+#estamos lendo o arquivo zip em chunks do tamanho pré-definido, mas apenas as colunas pré-determinadas no passo anterior
+#e alocando esses data frames na lista 'resultados'.
+resultados = []
+for chunk in pd.read_csv(caminho_zip, compression="zip", chunksize=chunksize, usecols=usecols):
+    resultados.append(getStats(chunk))
+
+#aqui consolidamos todos os data frames individuais que armazenamos na lista 'resultados' num único data frame 'final'
+final = (
+    #empilha os data frames
+    pd.concat(resultados)
+    #agrupa os dados de acordo com as combinações unicas das colunas DAY, MONTH e AIRLINE
+    .groupby(["DAY", "MONTH", "AIRLINE"])
+    #soma os valores de todas as colunas numericas que nao estao incluisas no groupby
+    .sum()
+    #gera um novo index para o data frame
+    .reset_index()
+)
+
+#definimos uma função que recebe um data frame como entrada e retorna um data frame como saída
+def computeStats(input_df: pd.DataFrame) -> pd.DataFrame:
+    stats = (
+        input_df
+        #agrupamos o data frame pelas colunas DAY, MONTH e AIRLINE
+        .groupby(["AIRLINE", "DAY", "MONTH"])
+        #aplicamos uma função que para cada grupo soma os valores da coluna 'atrasos' e divide pela soma da coluna 'n'
+        .apply(lambda g: (g["atrasos"].sum() / g["n"].sum()))
+        #cria uma nova coluna usando os valores calculados anteriormente com o percentual de atraso
+        .reset_index(name="Perc")
+    )
+    
+    #criamo uma nova coluna date de nome 'Data' no data frame usando o valor em string das colunas MONTH e DAY
+    # e transformando essa string em date no final
+    stats["Data"] = pd.to_datetime(
+        stats["MONTH"].astype(str).str.zfill(2) + "-" +
+        stats["DAY"].astype(str).str.zfill(2) + "-2015",
+        format="%m-%d-%Y"
+    ).dt.date
+    
+    #renomeia a coluna 'AIRLINE' para 'Cia' e ordena as colunas na forma especificada
+    stats = stats.rename(columns={"AIRLINE": "Cia"})[["Cia", "Data", "Perc"]]
+    return stats
+
+#salvamos esses passos no data frame ex4
+ex4 = computeStats(final)
+
+#criamos uma lista com todos os meses do ano
+MESES_PT = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+]
+#criamos uma listas com os dias da semana
+DIAS_PT = ["D", "S", "T", "Q", "Q", "S", "S"]  # Dom, Seg, Ter, Qua, Qui, Sex, Sáb
+
+#criamos uma função que recebe como argumento uma data frame e uma string que será o codigo da companhia aérea
+def calendario_mensal(stats, cia):
+    #filtra a coluna 'Cia' do data frame para conter apenas as linhas em que temos a string selecionada anteriormente
+    df = stats[stats["Cia"] == cia].copy()
+    #garante que a coluna 'Data' seja do tipo datetime
+    df["Data"] = pd.to_datetime(df["Data"])
+    #cria uma serie onde o indice é a coluna 'Data' e os valores vem da coluna 'Perc'
+    valores = df.set_index("Data")["Perc"]
+
+    #cria a "tela" para a exibição dos resultados
+    fig, axes = plt.subplots(3, 4, figsize=(18, 12))
+    #converte a matriz para um array
+    axes = axes.flatten()
+
+    #configura o calendario para que as semanas comecem no domingo
+    calendar.setfirstweekday(calendar.SUNDAY)
+    #definimos um gradiente de cores para os valores
+    cmap = LinearSegmentedColormap.from_list("blue_red", ["blue", "red"])
+
+    #seleciona o subgrafico correto para o mes que estamos olhando 
+    for mes in range(1, 13):
+        ax = axes[mes-1]
+        cal = calendar.monthcalendar(2015, mes)
+
+        #cria uma matriz usando o mesmo formato do calendario do mes analisado deixando em branco dias que nao fazem parte do mes
+        matriz = np.full((len(cal), 7), np.nan)
+        for i, semana in enumerate(cal):
+            for j, dia in enumerate(semana):
+                if dia != 0:
+                    data = pd.Timestamp(year=2015, month=mes, day=dia)
+                    if data in valores.index:
+                        matriz[i, j] = valores[data]
+
+        #comando que desenha a matriz como uma imagem
+        c = ax.imshow(matriz, cmap=cmap, vmin=0, vmax=1, aspect='auto')
+        
+        #define o 'tamanho' da semana
+        ax.set_xticks(range(7))
+        #define os marcadores do eixo para serem os valores da lista de dias de semana
+        ax.set_xticklabels(DIAS_PT)
+        #remove o marcador de numero da semana
+        ax.set_yticks([])
+        #titulo do subgrafico
+        ax.set_title(MESES_PT[mes-1], fontsize=12)
+
+    #adiciona a legenda de cores
+    fig.colorbar(c, ax=axes, orientation="vertical", fraction=0.02, pad=0.04, label="Percentual de atrasos")
+    #ajusta o espaçamento estre os subgraficos
+    plt.subplots_adjust(right=0.8, hspace=0.5, wspace=0.3)
+    #exibe a figura final
+    plt.show()
+
+# exemplo
+calendario_mensal(ex4, "AA")
+```

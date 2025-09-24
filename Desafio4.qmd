@@ -1,0 +1,153 @@
+---
+title: "Desafio4"
+format: html
+editor: visual
+---
+
+## Desafio 4
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(leaflet)
+library(readr)
+library(stringr)
+library(dplyr)
+library(geosphere)
+library(lubridate)
+```
+
+Tabela pra ver aviões com mais voôs.
+
+```{r}
+voos <- read_csv('../ME315/dados/flights.csv.zip')
+qtd_voos <- voos %>% group_by(TAIL_NUMBER) %>% summarise(n())
+```
+
+Função
+
+```{r}
+analisa_aeronave <- function(tail_number, arquivo){
+  #Definimos uma função para importar os dados em partes
+  importacao <- function(chunk, pos){
+    chunk %>%
+    #Filtramos apenas a aeronave que vamos analisar
+    filter(TAIL_NUMBER == tail_number) %>%
+    #Criamos uma coluna com as datas e horários dos voôs para podermos organiza-los
+    mutate(
+      hora_str = as.character((DEPARTURE_TIME)),
+      hora = as.integer(substr(hora_str, 1, 2)),
+      minuto = as.integer(substr(hora_str, 3, 4)),
+      datetime = make_datetime(
+          year = YEAR,
+          month = MONTH,
+          day = DAY,
+          hour = hora,
+          min = minuto
+        )
+    )
+  }
+  #Aqui temos a importação propriamente dita usando a função criada anteriormente
+  flights_step <- read_csv_chunked(
+    file = unz(arquivo, "flights.csv"),
+    callback = DataFrameCallback$new(importacao),
+    chunk_size = 1e6
+  )
+  #Oganizamos a tabela gerada pelas datas e horários dos voôs e retiramos as coluas que foram criadas apenas para gerar a coluna de datas e horários.
+  flights_step <-
+    flights_step %>%
+    arrange(datetime) %>%
+    select(-minuto, -hora, -hora_str)
+  #importamos a tabela que contém as coordenadas de cada aeroporto
+  airports <- read_csv(
+  unz("../ME315/dados/archive.zip", "airports.csv"),
+  col_select = c(IATA_CODE, CITY, STATE, LATITUDE, LONGITUDE)
+  )
+  #Usando leff_join trazemos da tabela 'airports' as colunas de coordenadas, separando em coordenadas dos aeroportos de origem e de destino.
+  flights <- flights_step %>%
+    left_join(airports, join_by(ORIGIN_AIRPORT == IATA_CODE)) %>%
+    select(-STATE, -CITY) %>%
+    rename(lat_orig = LATITUDE, lon_orig = LONGITUDE) %>%
+    left_join(airports, join_by(DESTINATION_AIRPORT == IATA_CODE)) %>%
+    select(-STATE, -CITY) %>%
+    rename(lat_dest = LATITUDE, lon_dest = LONGITUDE) %>%
+    mutate(
+      index = row_number(),
+      #aqui geramos a coluna com a distancia de voo de cada aeronave
+      distancia_km = distHaversine(
+      p1 = cbind(lon_orig, lat_orig),
+      p2 = cbind(lon_dest, lat_dest)
+    ) / 1000,
+    #geramos as colunas com os horarios de saida e chegada da aeronava
+    hora_ori = as.character((DEPARTURE_TIME)),
+    hora_ori = as.integer(substr(hora_ori, 1, 2)),
+    minuto_ori = as.integer(substr(hora_ori, 3, 4)),
+    saida_horario = make_datetime(
+        year = YEAR,
+        month = MONTH,
+        day = DAY,
+        hour = hora_ori,
+        min = minuto_ori
+      ),
+    hora_des = as.character((ARRIVAL_TIME)),
+    hora_des = as.integer(substr(hora_des, 1, 2)),
+    minuto_des = as.integer(substr(hora_des, 3, 4)),
+    chegada_horario = make_datetime(
+        year = YEAR,
+        month = MONTH,
+        day = DAY,
+        hour = hora_des,
+        min = minuto_des
+      ),
+    duracao_horas = as.numeric(difftime(chegada_horario, saida_horario, units = "hours")),
+    velocidade_media_kmh = distancia_km / duracao_horas
+    )
+  #Podemos mudar a grossura da linha de acordo com o que precisarmos
+  flights <- flights %>%
+    mutate(espessura_linha = velocidade_media_kmh / 150)
+  #Geramos um gradiente de cores que será usada para identificarmos o período do ano em que o voô ocorreu
+  paleta_cores <- colorNumeric(
+    palette = "YlOrRd",
+    domain = flights$index
+  )
+  #Criamos o mapa, plotando os pontos que representam os aeroportos pelo qual o avião passou. Em azul será o primeiro aeroporto do qual a aeronave saiu no ano, e em vermelho estarão os outro.
+  mapa <- leaflet(flights) %>%
+    addProviderTiles(providers$CartoDB.Positron) %>%
+    addCircleMarkers(~lon_orig, ~lat_orig, radius = 4, color = "blue", stroke = FALSE, fillOpacity = 0.8, popup = ~paste("Origem:", ORIGIN_AIRPORT)) %>%
+  addCircleMarkers(~lon_dest, ~lat_dest, radius = 4, color = "red", stroke = FALSE, fillOpacity = 0.8, popup = ~paste("Destino:", DESTINATION_AIRPORT))
+  #Geramos as linhas indicando o caminho feito pelo avião. Elas serão geradas usando o gradiente de cores gerado anteriormente.
+  for (i in 1:nrow(flights)) {
+  voo_atual <- flights[i, ]
+    mapa <- mapa %>%
+    addPolylines(
+      lng = c(voo_atual$lon_orig, voo_atual$lon_dest),
+      lat = c(voo_atual$lat_orig, voo_atual$lat_dest),
+      color = paleta_cores(voo_atual$index),
+      weight = voo_atual$espessura_linha,
+      opacity = 0.9
+    )
+  }
+  #Aqui incluimos uma legenda das cores no mapa
+  mapa <- mapa %>%
+  addLegend(
+    "bottomright",
+    pal = paleta_cores,
+    values = ~index,
+    title = "Ordem dos Voos",
+    opacity = 1
+  )
+  #retornamos uma lista com a tabela e o mapa.
+  return(list(
+    flights = flights,
+    mapa = mapa
+  ))
+}
+
+```
+
+```{r}
+resultado <- analisa_aeronave("N431WN", file.path("dados", "flights.csv.zip"))
+flights <- resultado$flights
+flights
+resultado$mapa
+```

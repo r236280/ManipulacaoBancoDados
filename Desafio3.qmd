@@ -1,0 +1,34 @@
+---
+title: "Desafio 3"
+format: html
+editor: visual
+---
+
+```{r}
+setwd("//smb/ra236280/Documentos/ME315")
+```
+
+Criando arquivos
+
+```{r}
+library(arrow)
+library(jsonlite)
+
+df <- tibble::tibble(
+  id = 1:5,
+  nome = c("Ana", "Bruno", "Carlos", "Daniela", "Eduardo"),
+  atraso = c(TRUE, FALSE, TRUE, FALSE, TRUE)
+)
+
+write_parquet(df, "exemplo.parquet")
+write_json(df, "exemplo.json", pretty = TRUE)
+```
+
+Importação e leitura
+
+```{r}
+library(rio)
+
+parquet_df <- import("exemplo.parquet")
+json_df <- import("exemplo.json")
+```
