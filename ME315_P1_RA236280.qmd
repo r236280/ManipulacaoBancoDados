@@ -1,0 +1,161 @@
+---
+title: "Prova1"
+format: pdf
+editor: visual
+---
+
+## Prova 1 ME315
+
+```{r, eval = false}
+library(dplyr)
+library(readxl)
+library(readr)
+library(lubridate)
+library(stringr)
+library(moments)
+library(DT)
+library(ggplot2)
+library(jsonlite)
+```
+
+```{r, eval = false}
+limpa_chunk <- function(input){
+  filter(!(if_all(everything(), ~ is.na(.) | . == "")))
+  return(chunk)
+  }
+```
+
+```{r, eval = false}
+library(openxlsx)
+options(openxlsx.numfmt = TRUE) 
+
+arquivo1 <- "Dados_P1_ME315/amex_active.xlsx"
+arquivo2 <- "Dados_P1_ME315/nasdaq_active.xlsx"
+arquivo3 <- "Dados_P1_ME315/nyse_active.xlsx" 
+
+amex <- read.xlsx(arquivo1,
+                  detectDates = TRUE,  
+                  skipEmptyRows = TRUE,                
+                  skipEmptyCols = TRUE)
+nasdaq <- read.xlsx(arquivo2,                    
+                    detectDates = TRUE,    
+                    skipEmptyRows = TRUE,                 
+                    skipEmptyCols = TRUE)
+nyse <- read.xlsx(arquivo3,
+                  detectDates = TRUE,
+                  skipEmptyRows = TRUE,
+                  skipEmptyCols = TRUE)
+```
+
+Tratamento inicial.
+
+```{r, eval = false}
+
+tratamento <- function(input){
+  output <- input %>% 
+  `colnames<-`(.[1, ]) %>%
+  slice(-1) %>%
+  rename_with(~ str_extract(.x, "[^\\s]+$"), -Data) %>%
+  mutate(across(-Data, ~ ifelse(. == "-", NA, .))) %>%
+  mutate(across(-Data, as.numeric)) %>%
+  filter(if_any(-Data, ~!is.na(.))) %>%
+  arrange(Data) %>%
+  select(Data, where(~ mean(is.na(.x)) <= 0.9)) %>%
+  filter(Data >= as.Date("2000-01-01") & Data <= as.Date("2025-08-31"))
+  return(output)
+}
+
+amex_cabec <- tratamento(amex)
+nasdaq_cabec <- tratamento(nasdaq)
+nyse_cabec <- tratamento(nyse)
+```
+
+Cálculo do Log-retorno.
+
+```{r, eval = false}
+calcula_logret <- function(precos) {
+  precos[-1] <- lapply(precos[-1], function(x) {
+    x <- as.numeric(x)
+    ret <- rep(NA, length(x))
+    idx <- which(!is.na(x))
+    if(length(idx) > 1) ret[idx[-1]] <- log(x[idx[-1]] / x[idx[-length(idx)]])
+    ret
+  })
+  return(precos)
+}
+
+amex_logret <- calcula_logret(amex_cabec)
+nasdaq_logret <- calcula_logret(nasdaq_cabec)
+nyse_logret <- calcula_logret(nyse_cabec)
+```
+
+Unindo as tabelas numa única.
+
+```{r, eval = false}
+tabelas <- list(amex_logret, nasdaq_logret, nyse_logret)
+retornos_diarios <- Reduce(function(x, y) full_join(x, y, by = "Data"), tabelas)
+write_csv(retornos_diarios, "retornos_diarios_236280.csv")
+```
+
+Retorno mensal.
+
+```{r, eval = false}
+retorno_mensal <- retornos_diarios %>%
+  mutate(Data = as.Date(Data, format = "%Y-%m-%d"),
+         mes = floor_date(Data, "month")) %>%
+  group_by(mes) %>%
+  summarise(across(-Data, ~ sum(.x, na.rm = TRUE))) %>%
+  mutate(across(-mes, ~ .x * 100))
+```
+
+Estatísticas
+
+```{r, eval = false}
+estatisticas <- retorno_mensal %>%
+  select(-mes) %>%
+  summarise(across(everything(), list(
+    media       = ~ mean(.x, na.rm = TRUE),
+    maximo      = ~ max(.x, na.rm = TRUE),
+    minimo      = ~ min(.x, na.rm = TRUE),
+    mediana     = ~ median(.x, na.rm = TRUE),
+    assimetria  = ~ skewness(.x, na.rm = TRUE),
+    curtose     = ~ kurtosis(.x, na.rm = TRUE),
+    desvio      = ~ sd(.x, na.rm = TRUE)
+  ))) %>%
+  tidyr::pivot_longer(everything(),
+                      names_to = c("acao", "estatistica"),
+                      names_sep = "_",
+                      values_to = "valor")
+```
+
+Tabela
+
+```{r, eval = false}
+datatable(head(estatisticas, 350), rownames = FALSE)
+```
+
+Gráfico
+
+```{r, eval = false}
+retorno_mensal %>%
+  select(mes, NVDA) %>%
+  ggplot(aes(x = mes, y = NVDA)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(size = 1, alpha = 0.6) +
+  labs(
+    title = "Log-retorno Mensal da NVDA",
+    x = "Mês",
+    y = "Log-retorno (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+Salvar a tabela em formato json.
+
+```{r, eval = false}
+write_json(estatisticas, "estatisticas_descritivas_mensais_236280.json", pretty = TRUE, auto_unbox = TRUE)
+```
