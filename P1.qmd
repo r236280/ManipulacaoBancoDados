@@ -159,3 +159,4 @@ Salvar a tabela em formato json.
 ```{r, eval = false}
 write_json(estatisticas, "estatisticas_descritivas_mensais_236280.json", pretty = TRUE, auto_unbox = TRUE)
 ```
+
