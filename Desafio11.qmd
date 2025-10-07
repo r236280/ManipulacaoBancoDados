@@ -1,0 +1,102 @@
+---
+title: "Desafio 11"
+format: html
+editor: visual
+---
+
+```{python}
+from datetime import datetime
+
+def data_de_compilacao():
+    agora = datetime.now()
+    return agora.strftime("%d/%m/%Y %H:%M:%S")
+
+print("Este documento foi compilado em:", data_de_compilacao())
+```
+
+```{python}
+import polars as pl
+```
+
+```{python}
+colunas = [
+  "age", "workclass", "fnlwgt", "education", "education-num", "marital-status", "occupation", "relationship", "race", "sex", "capital-gain", "capital-loss", "hours-per-week", "native-country", "income"
+]
+
+tipos = {
+  "age": pl.Int64, "workclass": pl.Utf8, "fnlwgt": pl.Int64, "education": pl.Utf8, "education_num": pl.Int64, "marital_status": pl.Utf8, "occupation": pl.Utf8, "relationship": pl.Utf8, "race": pl.Utf8, "sex": pl.Utf8, "capital_gain": pl.Int64, "capital_loss": pl.Int64, "hours_per_week": pl.Int64, "native_country": pl.Utf8, "income": pl.Utf8
+}
+```
+
+```{python}
+renda = pl.read_csv(
+    "../ME315/dados/renda_adulta.csv.gz",
+    has_header=False,           # sem cabeçalho
+    new_columns=colunas,        # nomes das colunas
+    dtypes=tipos,               # tipos das colunas
+    null_values="?",            # "?" será tratado como NA
+)
+
+renda.head()
+```
+
+```{python}
+print("Tipos das colunas:")
+print(renda.dtypes)
+
+print("\n Dimensões da tabela:")
+print(f"{renda.height} linhas × {renda.width} colunas")
+```
+
+```{python}
+acima = renda.filter(pl.col("income") == ">50K").height
+abaixo = renda.filter(pl.col("income") == "<=50K").height
+
+print(f"Pessoas com renda > 50.000: {acima}")
+print(f"Pessoas com renda <= 50.000: {abaixo}")
+```
+
+```{python}
+media_horas = (
+    renda
+    .group_by("income")  # ✅ função correta em Polars
+    .agg(pl.col("hours-per-week").mean().alias("media_horas_trabalhadas"))
+    .sort("income")
+)
+
+media_horas
+```
+
+```{python}
+contagem_profissao = (
+    renda
+    .group_by("occupation")
+    .len()
+    .sort("len", descending=True)
+)
+
+contagem_profissao
+```
+
+```{python}
+import matplotlib.pyplot as plt
+
+df_plot = media_horas.to_pandas()
+
+plt.bar(
+    df_plot["income"], 
+    df_plot["media_horas_trabalhadas"], 
+    color="skyblue"
+)
+
+plt.title("Média de horas trabalhadas por semana em função da renda", fontsize=12)
+plt.xlabel("Nível salarial")
+plt.ylabel("Média de horas por semana")
+plt.grid(axis="y", linestyle="--", alpha=0.7)
+
+# adicionar os valores sobre as barras
+for i, v in enumerate(df_plot["media_horas_trabalhadas"]):
+    plt.text(i, v + 0.3, f"{v:.1f}", ha='center', fontsize=10)
+
+plt.show()
+```
