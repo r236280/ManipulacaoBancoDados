@@ -1,0 +1,137 @@
+---
+title: "Desafio 14"
+format: html
+editor: visual
+---
+
+## Desafio 14
+
+```{python}
+from datetime import datetime
+
+def data_de_compilacao():
+    agora = datetime.now()
+    return agora.strftime("%d/%m/%Y %H:%M:%S")
+
+print("Este documento foi compilado em:", data_de_compilacao())
+```
+
+```{python}
+import pandas as pd
+
+caminho = "diamonds.csv.gz"
+
+#df_di = pd.read_csv(caminho)
+
+df_di = pd.read_csv("dados/diamonds.csv.gz")
+
+print(df_di.head())
+
+#alternativamente
+
+#import polars as pl
+
+#df2 = pl.read_csv("diamonds.csv.gz", infer_schema_length=1000)
+
+#ou
+
+#df = pd.read_csv("dados/arquivo.csv.gz")
+
+#print(df.head())
+```
+
+```{r, width = 8, height = 6}
+
+library(reticulate)
+library(dplyr)
+library(ggplot2)
+
+df_r <- py$df_di
+
+cor_val <- cor(df_r$carat, df_r$price)
+
+graf1 <- ggplot(df_r, aes(x = carat, y = price)) +
+  geom_point(color = "steelblue", alpha = 0.4) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", size = 1.2) +
+  coord_cartesian(ylim = c(0, 19000)) +
+  labs(
+    title = "Relação entre Peso e Preço",
+    x = "Carat",
+    y = "Price",
+    caption = paste("Correlação:", round(cor_val, 3))
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12)
+  )
+
+graf1
+```
+
+Ações tomadas: Como temos muitos pontos proximos uns aos outros, para melhor visualização os pontos foram deixados com certa transparencia, o que ajuda na visualização da sobreopsição. A linha de tendencia e o valor da correlação também foram adicionados, tornando mais facil interpretar os dados. Os eixos foram ajustados para mostrar todos os dados, e as cores do gráfico foram escolhidas para facilitar leitura e impressão.
+
+Descobertas: o gráfico mostra uma relação positiva entre quilates e o preço dos diamantes.
+
+```{r, width = 14, height = 10}
+ggplot(df_r, aes(x = carat, y = price)) +
+  geom_point(color = "steelblue", alpha = 0.4) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", size = 1.2) +
+  facet_wrap(~cut, scales = "free") +
+  coord_cartesian(ylim = c(0, 19000)) +
+  labs(
+    title = "Relação entre Peso e Preço por Corte",
+    x = "Carat",
+    y = "Price",
+    caption = paste("Correlação:", round(cor_val, 3))
+  ) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12)
+  ) +
+  facet_wrap(~cut)
+```
+
+```{python}
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+sns.set(style="whitegrid", context="talk")
+g = sns.relplot(
+    data=df_di,
+    x="carat", y="price",
+    hue="color", style="clarity",
+    col="cut", col_wrap=3,
+    height=6, aspect=1.2,
+    kind="scatter", alpha=0.6
+)
+
+for ax in g.axes.flatten():
+    title = ax.get_title()
+    if not title:
+        continue
+    try:
+        cut_value = title.split(' = ')[1]
+    except IndexError:
+        continue
+    data_subset = df_di[df_di['cut'] == cut_value]
+    sns.regplot(
+        data=data_subset,
+        x="carat", y="price",
+        scatter=False, ax=ax,
+        color="black", line_kws={"linestyle": "dashed"}
+    )
+
+g.set_axis_labels("Peso (Carat)", "Preço (Price)")
+g.set_titles("Corte: {col_name}")
+g._legend.set_title("Cor / Clareza")
+g.set(ylim=(0, 19000))
+g.fig.suptitle("Relação entre Peso e Preço dos Diamantes por Corte", fontsize=20)
+plt.subplots_adjust(top=0.9, wspace=0.2, hspace=0.3)
+
+plt.show()
+```
