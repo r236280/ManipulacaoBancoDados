@@ -1,0 +1,334 @@
+---
+title: "Trabalho Final ME315 - SQLite"
+author: "Rafael Lera Alciati"
+format:
+  revealjs:
+    self-contained: true
+    fontsize: 28px
+execute:
+  echo: true
+  eval: true
+  warning: false
+  message: false
+---
+
+```{=html}
+<style>
+
+.reveal pre code {
+font-size: 1.2em !important; /\* Aumenta a fonte do código \*/
+line-height: 1.3;
+}
+</style>
+```
+
+## O que é SQLite ?
+
+-   Como já vimos em aula, o SQLite é uma biblioteca que implementa um mecanismo de banco de dados SQL autônomo, sem depender de um servidor, de forma completa e totalmente gratuita.
+
+-   Assim como o R, Julia possui o pacote *SQLite.jl*, que permite acessar bancos SQLite diretamente no código.
+
+```{julia}
+using Pkg
+Pkg.add("SQLite");
+Pkg.add("DataFrames")
+```
+
+<br>
+
+```{julia}
+using SQLite;
+db = SQLite.DB("dados/disco.db");
+db
+```
+
+## Manipulação Básica
+
+-   Quais são as tabelas existentes no banco de dados?
+
+```{julia}
+using DataFrames;
+
+tabelas = DataFrame(DBInterface.execute(db,
+"SELECT name FROM sqlite_master WHERE type='table';" ));
+
+join(tabelas.name, ", ")
+```
+
+-   **DBInterface.execute** é a forma padrão de consultar um banco de dados SQLite usando Julia. Ele apenas identifica a informação, enquanto a função DataFrame foi a forma que escolhemos para estruturar esses dados em uma tabela pronta para o uso.
+
+-   Vale notar que esse acesso ao banco e identificação das informações têm um consumo de memória insignificante. A alocação de memória apenas aconteceu quando materializamos esses dados num data frame.
+
+## Manipulação Básica
+
+-   Quais são as colunas na tabela customers?
+
+```{julia}
+df_customers = DataFrame(DBInterface.execute(db,
+    "PRAGMA table_info(customers);"));
+  
+colnames_customers = df_customers.name
+```
+
+-   **PRAGMA** é um comando do SQLite usado para consultar a estrutura interna (metadados) das tabelas. Neste caso, acessamos a coluna *name* do data frame *df_customers* criado.
+
+## Selecionando Registros
+
+-   A função *first* em Julia é equivalente a função *head* do R padrão.
+
+```{julia}
+df_albums = DataFrame(DBInterface.execute(db,
+    "SELECT * FROM albums"));
+    
+df_visual = first(df_albums, 5);
+
+show(stdout, "text/plain", df_visual)
+```
+
+<br>
+
+```{julia}
+dimensoes = size(df_albums)
+```
+
+## Selecionando Registros
+
+-   Para selecionar as colunas *trackid*, *name* e *unitprice* da tabela *track* e ordenar o objeto resultante por *unitprice*, faríamos da seguinte forma:
+
+```{julia}
+df_tracks = DataFrame(DBInterface.execute(db,
+    "SELECT trackid, name, unitprice FROM tracks ORDER BY name"));
+
+df_tracks_ord = first(df_tracks, 5);
+
+show(stdout, "text/plain", df_tracks_ord)
+```
+
+## Seleção com Restrições
+
+-   Aqui buscamos apenas os dados das colunas *name* e *albumid* da tabela *tracks*, porém com a restrição albumid = 1.
+
+```{julia}
+df_cities = DataFrame(DBInterface.execute(db,
+    "SELECT name, albumid FROM tracks WHERE albumid=1"));
+
+df_cities_ord = first(df_cities, 7);
+
+show(stdout, "text/plain", df_cities_ord)
+```
+
+## Manipulação de Dados
+
+-   Aqui, unimos duas tabelas para obter informações que julgamos relevantes usando o INNER JOIN.
+
+```{julia}
+df_join = DataFrame(DBInterface.execute(db,
+    "SELECT albums.Title, artists.Name
+    FROM artists
+    INNER JOIN albums ON artists.ArtistId = albums.ArtistId
+    WHERE artists.Name='Aerosmith'"));
+  
+first(df_join, 5);
+
+show(stdout, "text/plain", df_join)
+```
+
+## Criando um Banco de Dados
+
+-   O comando SQLite.DB é o comando padrão para nos conectarmos a um banco de dados. Ele sempre verifica se arquivo existe e tenta se conectar a ele. Caso ele não encontre, então é criado um novo arquivo.
+
+```{julia}
+db_novo = SQLite.DB("dados/lojas.db");
+
+SQLite.execute(db_novo, "
+CREATE TABLE lojas(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    cidade TEXT,
+    categoria TEXT
+)
+");
+
+SQLite.execute(db_novo, "
+CREATE TABLE vendedores (
+    nome TEXT NOT NULL,
+    cidade TEXT,
+    email TEXT
+)
+");
+```
+
+## Inserindo Dados
+
+-   Uma forma de inserir dados numa tabela, é criando um data frame e em seguida, fazer uma inserção automática usando um loop. Para cada volta *i*, pegamos os valores da linha atual e preenchemos os lugares reservados pelos *?* na tabela.
+
+```{julia}
+nomes = ["Loja A", "Loja B", "Loja C"];
+cidades = ["São Paulo", "Rio de Janeiro", "Curitiba"];
+categorias = ["Eletrônicos", "Moda", "Mercado"];
+
+df_lojas = DataFrame(
+    nome = nomes,
+    cidade = cidades,
+    categoria = categorias
+);
+
+for i in 1:nrow(df_lojas)
+    SQLite.execute(db_novo,
+        "INSERT INTO lojas (nome, cidade, categoria) VALUES (?, ?, ?)",
+        (df_lojas.nome[i], df_lojas.cidade[i], df_lojas.categoria[i])
+    );
+end
+```
+
+## Inserindo Dados
+
+-   Outra forma ainda mais simples é usando a função *SQLite.load!*. Ela criará uma nova tabela no nosso banco de dados usando um data frame.
+
+```{julia}
+clientes = ["Cliente A", "Cliente B", "Cliente C"];
+cidades = ["São Paulo", "Rio de Janeiro", "Curitiba"];
+idades = [45, 28, 32];
+
+df_clientes = DataFrame(
+    nome = clientes,
+    cidade = cidades,
+    idade = idades
+);
+
+#SQLite.execute(db_novo, "DROP TABLE IF EXISTS clientes"); #excluir essa linha
+
+SQLite.load!(df_clientes, db_novo, "clientes");
+```
+
+## Inserindo Dados
+
+-   Resultados
+
+```{julia}
+df_lojas = DataFrame(DBInterface.execute(db_novo,
+    "SELECT * FROM lojas"));
+show(stdout, "text/plain", df_lojas)
+```
+
+<br>
+
+```{julia}
+df_lojas = DataFrame(DBInterface.execute(db_novo,
+    "SELECT * FROM clientes"));
+show(stdout, "text/plain", df_lojas)
+```
+
+## Removendo uma tabela
+
+```{julia}
+tabelas = DataFrame(DBInterface.execute(db_novo,
+    "SELECT name FROM sqlite_master WHERE type='table';" ));
+
+join(tabelas.name, ", ")
+```
+
+<br>
+
+-   Você pode remover uma tabela usando a função *SQLite.drop!*:
+
+```{julia}
+SQLite.drop!(db_novo, "vendedores", ifexists=true);
+
+tabelas = DataFrame(DBInterface.execute(db_novo,
+    "SELECT name FROM sqlite_master WHERE type='table';" ));
+
+join(tabelas.name, ", ")
+```
+
+## Comparação de desempenho - R
+
+```{r}
+library(RSQLite)
+
+N <- 1e6
+df_big <- data.frame(id = 1:N)
+for (i in 1:10) {
+  df_big[[paste0("col", i)]] <- runif(N)
+}
+conn_r <- dbConnect(SQLite(), "teste_r.db")
+# Escrita
+inicio <- Sys.time()
+dbWriteTable(conn_r, "tabela_big", df_big, overwrite = TRUE)
+fim <- Sys.time()
+print(fim - inicio)
+# Leitura
+inicio <- Sys.time()
+dados <- dbGetQuery(conn_r, "SELECT * FROM tabela_big")
+fim <- Sys.time()
+print(fim - inicio)
+
+dbDisconnect(conn_r)
+if(file.exists("teste_r.db")) file.remove("teste_r.db")
+```
+
+## Comparação de desempenho - Julia
+
+```{julia}
+using SQLite, DataFrames, Random, Printf
+
+N = 1_000_000;
+df_big = DataFrame(id = 1:N);
+for i in 1:10
+    df_big[!, Symbol("col$i")] = rand(N)
+end;
+db_jl = SQLite.DB("teste_jl.db");
+# Escrita — pré-compilação
+SQLite.execute(db_jl, "DROP TABLE IF EXISTS tabela_big");
+SQLite.load!(df_big, db_jl, "tabela_big");
+# Escrita — real
+SQLite.execute(db_jl, "DROP TABLE IF EXISTS tabela_big");
+t_inicio = time();
+SQLite.load!(df_big, db_jl, "tabela_big");
+t_fim = time();
+@printf("Tempo real de escrita: %.4f segundos\n",(t_fim-t_inicio))
+# Leitura — pré-compilação
+df_lixo = DataFrame(DBInterface.execute(db_jl, "SELECT * FROM tabela_big"));
+# Leitura — real
+t_inicio = time();
+df_volta = DataFrame(DBInterface.execute(db_jl, "SELECT * FROM tabela_big"));
+t_fim = time();
+@printf("Tempo real de leitura: %.4f segundos\n",(t_fim-t_inicio))
+SQLite.close(db_jl);
+rm("teste_jl.db", force=true);
+```
+
+## Comparação de desempenho - Python
+
+```{python}
+import sqlite3
+import pandas as pd
+import numpy as np
+import time
+import os
+N = 1_000_000;
+df_big = pd.DataFrame({"id": np.arange(1, N+1)});
+for i in range(1, 11):
+    df_big[f"col{i}"] = np.random.rand(N);
+    
+db_name = "teste_py.db";
+conn = sqlite3.connect(db_name);
+# Escrita
+t0 = time.perf_counter();
+df_big.to_sql("tabela_big", conn, index=False, if_exists="replace");
+t1 = time.perf_counter();
+print(f"Tempo de escrita: {t1 - t0:.4f} segundos")
+# Leitura
+t0 = time.perf_counter();
+df_volta = pd.read_sql("SELECT * FROM tabela_big", conn);
+t1 = time.perf_counter();
+print(f"Tempo de leitura: {t1 - t0:.4f} segundos")
+conn.close();
+os.remove(db_name);
+```
+
+## Comparação de Desempenho
+
+-   Para Julia, tivemos que fazer um "aquecimento" pois o tempo gasto para compilar o código pode ser significativo. Isso acontece porque na primeira execução, a linguagem tem que converter o código (em Julia) para um código de máquina. Na segunda execução, esse passo ja foi feito e temos apenas o código sendo executado.
+
+-   R e Python usam bibliotecas que já tem esses comando compilados, por isso não precisam desse passo.
